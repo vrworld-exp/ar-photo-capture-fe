@@ -9,7 +9,7 @@ const CaptureModel: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastAngle = useRef<number | null>(null);
-  const zipRef = useRef<any>(null);
+  //const zipRef = useRef<any>(null);
 
   const [capturedImages, setCapturedImages] = useState<string[]>([]);
   const [rotationProgress, setRotationProgress] = useState<number>(0);
@@ -163,13 +163,13 @@ const CaptureModel: React.FC = () => {
   };
 
   // Function to capture a screenshot and offer to save it
-  const saveCurrentImage = (): void => {
-    capturePhoto();
-    const lastImage = capturedImages[capturedImages.length - 1];
-    if (lastImage) {
-      downloadSingleImage(lastImage, capturedImages.length);
-    }
-  };
+  // const saveCurrentImage = (): void => {
+  //   capturePhoto();
+  //   const lastImage = capturedImages[capturedImages.length - 1];
+  //   if (lastImage) {
+  //     downloadSingleImage(lastImage, capturedImages.length);
+  //   }
+  // };
 
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-black text-white p-4">
