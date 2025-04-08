@@ -31,15 +31,12 @@ const CaptureModel: React.FC = () => {
     gamma: null  // left-to-right tilt (-90 to 90)
   });
   const [guidanceMessage, setGuidanceMessage] = useState<string>('');
-  const [userPosition, setUserPosition] = useState<{x: number, y: number} | null>(null);
-  const [targetPosition, setTargetPosition] = useState<{x: number, y: number} | null>(null);
-  console.log(deviceOrientation);
   
   // Ideal tilt parameters for each level
   const idealPathParams = [
-    { beta: 70, gamma: 0, height: 'low' },      // LOW LEVEL (looking down at object)
-    { beta: 45, gamma: 0, height: 'medium' },   // MIDDLE LEVEL (looking straight at object)
-    { beta: 20, gamma: 0, height: 'high' }      // TOP LEVEL (looking slightly up at object)
+    { beta: 70, height: 'low', colorHex: '#FF5733' },      // LOW LEVEL (looking down at object)
+    { beta: 45, height: 'medium', colorHex: '#33A1FF' },   // MIDDLE LEVEL (looking straight at object)
+    { beta: 20, height: 'high', colorHex: '#33FF57' }      // TOP LEVEL (looking slightly up at object)
   ];
 
   // Request motion access
@@ -101,47 +98,14 @@ const CaptureModel: React.FC = () => {
       canvas.height = videoRef.current.offsetHeight;
     }
     
-    // Initialize user position at the bottom of the circle
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
-    const radius = Math.min(centerX, centerY) * 0.7; // 70% of the smaller dimension
-    
-    setUserPosition({
-      x: centerX,
-      y: centerY + radius
-    });
-    
-    // Calculate first target position
-    updateTargetPosition(0);
-    
-    // Initial draw of the path guide
-    drawPathGuide();
+    // Initial draw of the 3D path guide
+    draw3DPathGuide();
   };
   
-  // Update target position based on progress
-  const updateTargetPosition = (progress: number): void => {
+  // Draw the 3D path guide with AR-like visualization
+  const draw3DPathGuide = (): void => {
     const canvas = pathCanvasRef.current;
     if (!canvas) return;
-    
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
-    const radius = Math.min(centerX, centerY) * 0.7;
-    
-    // Convert progress to angle (0-100% maps to 0-360 degrees)
-    // Start from bottom (270 degrees) and move counter-clockwise
-    const angle = ((progress / 100) * 2 * Math.PI) + (1.5 * Math.PI);
-    
-    // Calculate position on the circle
-    const x = centerX + radius * Math.cos(angle);
-    const y = centerY + radius * Math.sin(angle);
-    
-    setTargetPosition({ x, y });
-  };
-  
-  // Draw the circular path guide with level indicator
-  const drawPathGuide = (): void => {
-    const canvas = pathCanvasRef.current;
-    if (!canvas || !userPosition || !targetPosition) return;
     
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -151,171 +115,240 @@ const CaptureModel: React.FC = () => {
     
     const centerX = canvas.width / 2;
     const centerY = canvas.height / 2;
-    const radius = Math.min(centerX, centerY) * 0.7; // 70% of the smaller dimension
+    
+    // Create 3D effect for the rings
+    const drawRing = (yOffset: number, color: string, progress: number = 100, label: string = '', isActive: boolean = false) => {
+      // Ring dimensions with perspective
+      const radiusX = canvas.width * 0.4; // horizontal radius (ellipse)
+      const radiusY = canvas.width * 0.1; // vertical radius (ellipse - gives perspective)
+      
+      // Draw ring - back half (behind the object)
+      ctx.beginPath();
+      ctx.ellipse(centerX, centerY + yOffset, radiusX, radiusY, 0, Math.PI, 2 * Math.PI);
+      ctx.strokeStyle = isActive ? color : `${color}55`; // Dimmed if not active
+      ctx.lineWidth = isActive ? 4 : 2;
+      ctx.setLineDash([5, 5]); // Dashed line for back half
+      ctx.stroke();
+      
+      // Draw ring - front half (in front of object) - filled with progress
+      if (isActive) {
+        // Draw progress arc for active ring
+        ctx.beginPath();
+        const startAngle = 0;
+        const endAngle = (progress / 100) * Math.PI;
+        ctx.ellipse(centerX, centerY + yOffset, radiusX, radiusY, 0, startAngle, endAngle);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 6;
+        ctx.setLineDash([]); // Solid line
+        ctx.stroke();
+        
+        // Draw current target position
+        const targetAngle = (progress / 100) * Math.PI;
+        const targetX = centerX + radiusX * Math.cos(targetAngle);
+        const targetY = (centerY + yOffset) + radiusY * Math.sin(targetAngle);
+        
+        // Capture zone visualization
+        ctx.beginPath();
+        ctx.arc(targetX, targetY, 15, 0, 2 * Math.PI);
+        ctx.fillStyle = 'rgba(255, 255, 0, 0.5)';
+        ctx.fill();
+        ctx.strokeStyle = 'yellow';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        // Capture target inner dot
+        ctx.beginPath();
+        ctx.arc(targetX, targetY, 5, 0, 2 * Math.PI);
+        ctx.fillStyle = 'yellow';
+        ctx.fill();
+      }
+      
+      // Draw front half outline
+      ctx.beginPath();
+      ctx.ellipse(centerX, centerY + yOffset, radiusX, radiusY, 0, 0, Math.PI);
+      ctx.strokeStyle = isActive ? color : `${color}99`; // Less dimmed for front half
+      ctx.lineWidth = isActive ? 4 : 2;
+      ctx.setLineDash([]); // Solid line for front half
+      ctx.stroke();
+      
+      // Label the ring
+      if (label) {
+        ctx.font = isActive ? 'bold 16px Arial' : '14px Arial';
+        ctx.fillStyle = isActive ? 'white' : '#cccccc';
+        ctx.textAlign = 'center';
+        // Position label to the left side of the ring
+        ctx.fillText(label, centerX - radiusX - 10, centerY + yOffset + 5);
+      }
+    };
     
     // Draw object indicator in center
     ctx.beginPath();
-    ctx.arc(centerX, centerY, 20, 0, 2 * Math.PI);
-    ctx.fillStyle = 'rgba(255, 165, 0, 0.7)';
+    ctx.arc(centerX, centerY, 25, 0, 2 * Math.PI);
+    ctx.fillStyle = 'rgba(255, 165, 0, 0.4)';
     ctx.fill();
-    ctx.strokeStyle = 'white';
+    ctx.strokeStyle = 'orange';
     ctx.lineWidth = 2;
+    ctx.setLineDash([]);
     ctx.stroke();
     
-    // Draw text "OBJECT" in center
-    ctx.font = '12px Arial';
-    ctx.fillStyle = 'white';
-    ctx.textAlign = 'center';
-    ctx.fillText('OBJECT', centerX, centerY + 5);
-    
-    // Draw circular path
+    // Draw simplified 3D object representation
+    // Top of object
     ctx.beginPath();
-    ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-    ctx.lineWidth = 4;
-    ctx.setLineDash([5, 5]); // Dashed line
-    ctx.stroke();
-    
-    // Calculate progress along the circle for current level
-    const startAngle = 1.5 * Math.PI; // Start from bottom
-    const progressAngle = startAngle + (levelProgress / 100) * (2 * Math.PI);
-    
-    // Draw progress arc
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, radius, startAngle, progressAngle, false);
-    ctx.strokeStyle = 'rgba(0, 255, 0, 0.8)';
-    ctx.lineWidth = 6;
-    ctx.setLineDash([]); // Solid line
-    ctx.stroke();
-    
-    // Draw target position indicator
-    ctx.beginPath();
-    ctx.arc(targetPosition.x, targetPosition.y, 12, 0, 2 * Math.PI);
-    ctx.fillStyle = 'rgba(0, 255, 0, 0.8)';
+    ctx.ellipse(centerX, centerY - 15, 12, 6, 0, 0, 2 * Math.PI);
+    ctx.fillStyle = 'rgba(255, 165, 0, 0.6)';
     ctx.fill();
-    ctx.strokeStyle = 'white';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'orange';
     ctx.stroke();
     
-    // Draw "TARGET" text above target
-    ctx.font = '12px Arial';
-    ctx.fillStyle = 'white';
-    ctx.fillText('TARGET', targetPosition.x, targetPosition.y - 15);
-    
-    // Draw user position indicator
+    // Side of object
     ctx.beginPath();
-    ctx.arc(userPosition.x, userPosition.y, 15, 0, 2 * Math.PI);
-    ctx.fillStyle = 'rgba(0, 128, 255, 0.8)';
-    ctx.fill();
-    ctx.strokeStyle = 'white';
-    ctx.lineWidth = 2;
+    ctx.moveTo(centerX - 12, centerY - 15);
+    ctx.lineTo(centerX - 12, centerY + 15);
+    ctx.arcTo(centerX - 12, centerY + 21, centerX, centerY + 21, 6);
+    ctx.arcTo(centerX + 12, centerY + 21, centerX + 12, centerY + 15, 6);
+    ctx.lineTo(centerX + 12, centerY - 15);
+    ctx.strokeStyle = 'orange';
     ctx.stroke();
-    
-    // Draw user icon
-    ctx.fillStyle = 'white';
-    // Draw stick figure head
-    ctx.beginPath();
-    ctx.arc(userPosition.x, userPosition.y - 5, 5, 0, 2 * Math.PI);
-    ctx.fill();
-    // Draw stick figure body
-    ctx.fillRect(userPosition.x - 1, userPosition.y - 2, 2, 10);
-    // Draw stick figure arms
-    ctx.fillRect(userPosition.x - 5, userPosition.y, 10, 2);
-    // Draw stick figure legs
-    ctx.beginPath();
-    ctx.moveTo(userPosition.x, userPosition.y + 8);
-    ctx.lineTo(userPosition.x - 4, userPosition.y + 14);
-    ctx.lineTo(userPosition.x + 4, userPosition.y + 14);
-    ctx.closePath();
+    ctx.fillStyle = 'rgba(255, 165, 0, 0.3)';
     ctx.fill();
     
-    // Draw arrow from user to target if they're not close
-    const dx = targetPosition.x - userPosition.x;
-    const dy = targetPosition.y - userPosition.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
+    // Calculate vertical offsets for the three rings
+    const topOffset = -canvas.height * 0.15;    // Top ring (high level)
+    const middleOffset = 0;                     // Middle ring
+    const bottomOffset = canvas.height * 0.15;  // Bottom ring (low level)
     
-    if (distance > 20) {
-      // Calculate direction
-      const angle = Math.atan2(dy, dx);
+    // Draw all three rings with appropriate colors and active states
+    drawRing(bottomOffset, idealPathParams[0].colorHex, 
+             currentLevel === 0 ? levelProgress : (currentLevel > 0 ? 100 : 0), 
+             'LOW LEVEL', currentLevel === 0);
+             
+    drawRing(middleOffset, idealPathParams[1].colorHex, 
+             currentLevel === 1 ? levelProgress : (currentLevel > 1 ? 100 : 0), 
+             'MIDDLE LEVEL', currentLevel === 1);
+             
+    drawRing(topOffset, idealPathParams[2].colorHex, 
+             currentLevel === 2 ? levelProgress : 0, 
+             'TOP LEVEL', currentLevel === 2);
+    
+    // Draw device orientation indicator (camera alignment)
+    if (deviceOrientation.beta !== null) {
+      const beta = deviceOrientation.beta;
+      const idealBeta = idealPathParams[currentLevel].beta;
+      const diffBeta = beta - idealBeta;
       
-      // Starting point just outside user icon
-      const startX = userPosition.x + 20 * Math.cos(angle);
-      const startY = userPosition.y + 20 * Math.sin(angle);
+      // Create a vertical alignment indicator on the right side
+      const indicatorX = canvas.width - 40;
+      const indicatorCenterY = canvas.height / 2;
+      const indicatorHeight = canvas.height * 0.5;
       
-      // Endpoint just before target
-      const endX = targetPosition.x - 15 * Math.cos(angle);
-      const endY = targetPosition.y - 15 * Math.sin(angle);
+      // Draw scale background
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(indicatorX - 10, indicatorCenterY - indicatorHeight/2, 20, indicatorHeight);
       
-      // Draw line
+      // Draw center line (ideal position)
       ctx.beginPath();
-      ctx.moveTo(startX, startY);
-      ctx.lineTo(endX, endY);
-      ctx.strokeStyle = 'yellow';
-      ctx.lineWidth = 3;
+      ctx.moveTo(indicatorX - 15, indicatorCenterY);
+      ctx.lineTo(indicatorX + 15, indicatorCenterY);
+      ctx.strokeStyle = 'green';
+      ctx.lineWidth = 2;
       ctx.stroke();
       
-      // Draw arrowhead
-      const arrowSize = 10;
+      // Calculate position on scale
+      // Clamp diffBeta to range of indicator
+      const clampedDiff = Math.max(Math.min(diffBeta, 30), -30);
+      const normalizedPos = (clampedDiff / 60) * indicatorHeight;
+      const markerY = indicatorCenterY + normalizedPos;
+      
+      // Draw position marker
       ctx.beginPath();
-      ctx.moveTo(endX, endY);
-      ctx.lineTo(
-        endX - arrowSize * Math.cos(angle - Math.PI/6),
-        endY - arrowSize * Math.sin(angle - Math.PI/6)
-      );
-      ctx.lineTo(
-        endX - arrowSize * Math.cos(angle + Math.PI/6),
-        endY - arrowSize * Math.sin(angle + Math.PI/6)
-      );
+      ctx.moveTo(indicatorX - 12, markerY);
+      ctx.lineTo(indicatorX + 12, markerY);
+      ctx.strokeStyle = Math.abs(diffBeta) < 10 ? 'green' : 'red';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      
+      // Draw triangles on ends
+      ctx.beginPath();
+      ctx.moveTo(indicatorX - 12, markerY);
+      ctx.lineTo(indicatorX - 18, markerY - 6);
+      ctx.lineTo(indicatorX - 18, markerY + 6);
+      ctx.closePath();
+      ctx.fillStyle = Math.abs(diffBeta) < 10 ? 'green' : 'red';
+      ctx.fill();
+      
+      ctx.beginPath();
+      ctx.moveTo(indicatorX + 12, markerY);
+      ctx.lineTo(indicatorX + 18, markerY - 6);
+      ctx.lineTo(indicatorX + 18, markerY + 6);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Label at top and bottom
+      ctx.font = '12px Arial';
+      ctx.fillStyle = 'white';
+      ctx.textAlign = 'center';
+      ctx.fillText('UP', indicatorX, indicatorCenterY - indicatorHeight/2 - 10);
+      ctx.fillText('DOWN', indicatorX, indicatorCenterY + indicatorHeight/2 + 20);
+    }
+    
+    // Draw compass indicator for horizontal rotation
+    if (deviceOrientation.alpha !== null) {
+      const alpha = deviceOrientation.alpha;
+      
+      // Create a horizontal compass strip at the bottom
+      const stripY = canvas.height - 40;
+      const stripWidth = canvas.width * 0.8;
+      const stripLeft = (canvas.width - stripWidth) / 2;
+      
+      // Draw strip background
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fillRect(stripLeft, stripY, stripWidth, 20);
+      
+      // Calculate normalized position (0-360 degrees maps to strip width)
+      const normalizedAlpha = ((alpha / 360) * stripWidth);
+      
+      // Draw markers every 45 degrees
+      ctx.font = '10px Arial';
+      ctx.fillStyle = '#aaaaaa';
+      ctx.textAlign = 'center';
+      for (let i = 0; i < 8; i++) {
+        const markerPos = stripLeft + (i * (stripWidth / 8));
+        ctx.fillRect(markerPos, stripY, 1, 5);
+        ctx.fillText((i * 45) + '°', markerPos, stripY + 15);
+      }
+      
+      // Draw current position marker
+      const markerX = stripLeft + normalizedAlpha;
+      ctx.beginPath();
+      ctx.moveTo(markerX, stripY - 5);
+      ctx.lineTo(markerX - 5, stripY - 10);
+      ctx.lineTo(markerX + 5, stripY - 10);
       ctx.closePath();
       ctx.fillStyle = 'yellow';
       ctx.fill();
     }
     
-    // Draw level indicator
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(centerX - 100, 20, 200, 40);
-    ctx.font = 'bold 20px Arial';
-    ctx.fillStyle = 'white';
-    ctx.textAlign = 'center';
-    ctx.fillText(levelNames[currentLevel], centerX, 48);
-    
-    // Draw height indicator
-    const heightText = `Hold camera at ${idealPathParams[currentLevel].height} position`;
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(centerX - 150, 70, 300, 30);
-    ctx.font = '16px Arial';
-    ctx.fillStyle = 'white';
-    ctx.fillText(heightText, centerX, 90);
-    
     // Draw guidance message if any
     if (guidanceMessage) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-      ctx.fillRect(centerX - 150, canvas.height - 60, 300, 40);
+      ctx.fillRect(centerX - 150, canvas.height - 80, 300, 40);
       ctx.font = 'bold 18px Arial';
       ctx.fillStyle = 'white';
-      ctx.fillText(guidanceMessage, centerX, canvas.height - 30);
+      ctx.textAlign = 'center';
+      ctx.fillText(guidanceMessage, centerX, canvas.height - 50);
     }
-  };
-  
-  // Move user position based on device orientation changes
-  const updateUserPosition = (alpha: number | null): void => {
-    if (alpha === null || !pathCanvasRef.current) return;
     
-    const canvas = pathCanvasRef.current;
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
-    const radius = Math.min(centerX, centerY) * 0.7;
-    
-    // Convert alpha to radians and adjust start point
-    // Alpha is 0-360, where 0/360 is North
-    // We need to convert this to the canvas coordinate system
-    const angleRad = ((360 - alpha) * Math.PI / 180) + (Math.PI / 2);
-    
-    // Calculate new position on the circle
-    const x = centerX + radius * Math.cos(angleRad);
-    const y = centerY + radius * Math.sin(angleRad);
-    
-    setUserPosition({ x, y });
+    // Draw current level info and height guidance
+    const heightText = `Hold camera at ${idealPathParams[currentLevel].height} position`;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(centerX - 150, 20, 300, 40);
+    ctx.font = 'bold 18px Arial';
+    ctx.fillStyle = idealPathParams[currentLevel].colorHex;
+    ctx.textAlign = 'center';
+    ctx.fillText(levelNames[currentLevel], centerX, 45);
+    ctx.font = '14px Arial';
+    ctx.fillStyle = 'white';
+    ctx.fillText(heightText, centerX, 65);
   };
   
   // Motion tracking for auto-capture and path guidance
@@ -330,76 +363,50 @@ const CaptureModel: React.FC = () => {
       // Update orientation state
       setDeviceOrientation({alpha, beta, gamma});
       
-      // Update user's position on path based on compass heading
-      updateUserPosition(alpha);
-      
       // Check if we need to provide guidance on camera angle
-      if (beta !== null && gamma !== null) {
+      if (alpha !== null && beta !== null && gamma !== null) {
         const idealBeta = idealPathParams[currentLevel].beta;
-        const idealGamma = idealPathParams[currentLevel].gamma;
+        const diffBeta = beta - idealBeta;
         
-        let guidance = '';
+        // Calculate if we're in the right position to capture
+        const isGoodAngle = Math.abs(diffBeta) < 15;
         
-        // Calculate deviations
-        const betaDiff = beta - idealBeta;
-        const gammaDiff = gamma - idealGamma;
-        
-        // Provide guidance based on deviations
-        if (Math.abs(betaDiff) > 10 || Math.abs(gammaDiff) > 10) {
-          if (betaDiff > 10) guidance += "TILT DOWN ";
-          else if (betaDiff < -10) guidance += "TILT UP ";
-          
-          if (gammaDiff > 10) guidance += "TILT LEFT ";
-          else if (gammaDiff < -10) guidance += "TILT RIGHT";
-          
-          setGuidanceMessage(guidance.trim());
-        } else {
-          // Check if we're in position for auto-capture
-          if (userPosition && targetPosition) {
-            const dx = targetPosition.x - userPosition.x;
-            const dy = targetPosition.y - userPosition.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            
-            if (distance < 20) {
-              setGuidanceMessage("Perfect position! Taking photo...");
-              
-              // Only auto-capture if we're in the right position and tilting correctly
-              if (autoCapturing && capturedImages.length < totalPhotos) {
-                // Check if we've moved enough since last capture
-                if (lastAngle.current === null) {
-                  lastAngle.current = alpha;
-                  capturePhoto();
-                } else {
-                  // Calculate the angular difference
-                  let delta = Math.abs(alpha! - lastAngle.current);
-                  if (delta > 180) {
-                    delta = 360 - delta;
-                  }
-                  
-                  if (delta >= degreesToCapture) {
-                    capturePhoto();
-                    lastAngle.current = alpha;
-                    
-                    // Update target position for next capture
-                    updateTargetPosition(levelProgress + (100 / capturesPerLevel));
-                  }
-                }
-              }
-            } else {
-              // Guide user to the target position
-              setGuidanceMessage("Move to the green target position");
+        // For auto-capture, we check if we've moved enough degrees since last capture
+        if (isGoodAngle && autoCapturing && capturedImages.length < totalPhotos) {
+          if (lastAngle.current === null) {
+            lastAngle.current = alpha;
+            capturePhoto();
+            setGuidanceMessage("Good angle! Photo captured.");
+          } else {
+            // Calculate the angular difference
+            let delta = Math.abs(alpha - lastAngle.current);
+            if (delta > 180) {
+              delta = 360 - delta;
             }
+            
+            if (delta >= degreesToCapture) {
+              capturePhoto();
+              lastAngle.current = alpha;
+              setGuidanceMessage("Good angle! Photo captured.");
+            }
+          }
+        } else if (!isGoodAngle) {
+          // Provide tilt guidance
+          if (diffBeta > 15) {
+            setGuidanceMessage("Tilt camera DOWN");
+          } else if (diffBeta < -15) {
+            setGuidanceMessage("Tilt camera UP");
           }
         }
       }
       
-      // Redraw path guide
-      drawPathGuide();
+      // Redraw 3D path guide
+      draw3DPathGuide();
     };
     
     window.addEventListener('deviceorientation', handleOrientation);
     return () => window.removeEventListener('deviceorientation', handleOrientation);
-  }, [capturedImages, autoCapturing, permissionGranted, cameraReady, currentLevel, userPosition, targetPosition, levelProgress]);
+  }, [capturedImages, autoCapturing, permissionGranted, cameraReady, currentLevel]);
   
   // Update progress whenever captured images change
   useEffect(() => {
@@ -413,20 +420,14 @@ const CaptureModel: React.FC = () => {
       // Reset last angle when changing levels
       lastAngle.current = null;
       
-      // Reset target position for new level
-      updateTargetPosition(0);
-      
       // Show level transition message
       setGuidanceMessage(`Great! Now move to ${levelNames[newCurrentLevel]} position`);
-      setTimeout(() => setGuidanceMessage('Move to the green target position'), 3000);
+      setTimeout(() => setGuidanceMessage(''), 3000);
     }
     
     const levelCaptureCount = capturedImages.length - (newCurrentLevel * capturesPerLevel);
     const newLevelProgress = (levelCaptureCount / capturesPerLevel) * 100;
     setLevelProgress(Math.min(Math.round(newLevelProgress), 100));
-    
-    // Update target position based on level progress
-    updateTargetPosition(newLevelProgress);
   }, [capturedImages, currentLevel]);
   
   const capturePhoto = (): void => {
@@ -450,10 +451,6 @@ const CaptureModel: React.FC = () => {
   const handleManualCapture = (): void => {
     if (capturedImages.length < totalPhotos) {
       capturePhoto();
-      
-      // Update target position for next photo
-      const nextProgress = levelProgress + (100 / capturesPerLevel);
-      updateTargetPosition(nextProgress);
     }
   };
   
@@ -503,7 +500,7 @@ const CaptureModel: React.FC = () => {
     <div className="flex flex-col items-center justify-center h-screen bg-black text-white p-4">
       {!permissionGranted ? (
         <div className="text-center">
-          <h2 className="text-xl mb-4">3D Object Scanner</h2>
+          <h2 className="text-2xl mb-4">3D Object Scanner</h2>
           <p className="mb-4">This app will help you capture photos from all angles to create a 3D model.</p>
           <p className="mb-4 text-yellow-300">
             Place your object on a stool or table in the center of an open area.
@@ -560,8 +557,8 @@ const CaptureModel: React.FC = () => {
             
             <p className="text-sm text-gray-400 mt-2">
               {autoCapturing 
-                ? "Walk around the object following the guide path. Photos capture automatically." 
-                : "Walk around the object and tap capture at each target position."}
+                ? "Walk around the object following the 3D guide. Photos capture automatically." 
+                : "Walk around the object and tap capture button as you move around."}
             </p>
           </div>
           
