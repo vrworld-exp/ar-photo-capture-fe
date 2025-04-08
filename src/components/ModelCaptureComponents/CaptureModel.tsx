@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 
 // Constants
 const degreesToCapture = 8;
@@ -217,18 +219,15 @@ const CaptureModel: React.FC = () => {
     const middleOffset = 0;                     // Middle ring
     const bottomOffset = canvas.height * 0.15;  // Bottom ring (low level)
     
-    // Draw all three rings with appropriate colors and active states
-    drawRing(bottomOffset, idealPathParams[0].colorHex, 
-             currentLevel === 0 ? levelProgress : (currentLevel > 0 ? 100 : 0), 
-             'LOW LEVEL', currentLevel === 0);
-             
-    drawRing(middleOffset, idealPathParams[1].colorHex, 
-             currentLevel === 1 ? levelProgress : (currentLevel > 1 ? 100 : 0), 
-             'MIDDLE LEVEL', currentLevel === 1);
-             
-    drawRing(topOffset, idealPathParams[2].colorHex, 
-             currentLevel === 2 ? levelProgress : 0, 
-             'TOP LEVEL', currentLevel === 2);
+    // MODIFIED: Only draw the current active level ring
+    // This replaces the previous code that drew all three rings
+    if (currentLevel === 0) {
+      drawRing(bottomOffset, idealPathParams[0].colorHex, levelProgress, 'LOW LEVEL', true);
+    } else if (currentLevel === 1) {
+      drawRing(middleOffset, idealPathParams[1].colorHex, levelProgress, 'MIDDLE LEVEL', true);
+    } else if (currentLevel === 2) {
+      drawRing(topOffset, idealPathParams[2].colorHex, levelProgress, 'TOP LEVEL', true);
+    }
     
     // Draw device orientation indicator (camera alignment)
     if (deviceOrientation.beta !== null) {
@@ -468,29 +467,54 @@ const CaptureModel: React.FC = () => {
     document.body.removeChild(link);
   };
   
-  // Function to download all images
+  // MODIFIED: Function to download all images as a ZIP file
   const downloadAllImages = async (): Promise<void> => {
     setIsDownloading(true);
     
     try {
-      // We'll download images one by one with short delays to not overwhelm the browser
+      // Create a new JSZip instance
+      const zip = new JSZip();
+      
+      // Add each image to the zip file
       for (let i = 0; i < capturedImages.length; i++) {
         // Calculate which level this image belongs to
         const imageLevel = Math.floor(i / capturesPerLevel);
         // Calculate index within the level
         const levelIndex = i % capturesPerLevel;
         
-        downloadSingleImage(capturedImages[i], levelIndex + 1, imageLevel);
-        // Add a small delay between downloads
-        if (i < capturedImages.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 100));
+        // Create folder structure
+        const folderName = `level-${imageLevel + 1}-${levelNames[imageLevel].toLowerCase().replace(' ', '-')}`;
+        
+        // Convert base64 image to blob
+        const imageData = capturedImages[i].split(',')[1];
+        const byteCharacters = atob(imageData);
+        const byteNumbers = new Array(byteCharacters.length);
+        
+        for (let j = 0; j < byteCharacters.length; j++) {
+          byteNumbers[j] = byteCharacters.charCodeAt(j);
         }
+        
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: 'image/jpeg' });
+        
+        // Add file to zip with proper naming for sequence
+        const fileName = `${folderName}/image-${(levelIndex + 1).toString().padStart(3, '0')}.jpg`;
+        zip.file(fileName, blob);
       }
       
-      alert(`Successfully prepared ${capturedImages.length} images for download. Check your downloads folder.`);
+      // Generate the zip file
+      const content = await zip.generateAsync({ type: 'blob' });
+      
+      // Create a timestamp for uniqueness
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      
+      // Save the zip file
+      saveAs(content, `3d-object-scan-${timestamp}.zip`);
+      
+      alert(`Successfully created ZIP archive with ${capturedImages.length} images.`);
     } catch (error) {
-      console.error('Error downloading images:', error);
-      alert('There was an error downloading the images.');
+      console.error('Error creating ZIP file:', error);
+      alert('There was an error creating the ZIP file. Check console for details.');
     } finally {
       setIsDownloading(false);
     }
@@ -604,7 +628,7 @@ const CaptureModel: React.FC = () => {
                 onClick={downloadAllImages}
                 disabled={isDownloading}
               >
-                {isDownloading ? 'Downloading...' : 'Download All Images'}
+                {isDownloading ? 'Creating ZIP...' : 'Download All Images as ZIP'}
               </button>
             </div>
           )}
