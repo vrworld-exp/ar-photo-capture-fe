@@ -1,16 +1,4 @@
-// import CaptureModel from "./components/ModelCaptureComponents/CaptureModel";
-
-// function App() {
-
-//   return (
-//       <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
-//         <CaptureModel />
-//       </div>
-//   )
-// }
-
-// export default App
-import  { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import Camera from './components/Camera';
 import ProgressTracker from './components/ProgressTracker';
 import FeedbackMessage from './components/FeedbackMessage';
@@ -58,6 +46,30 @@ function App() {
     // Update capture statistics
     updateCaptureStats();
   }, [capturedImages, coverageStatus.requiredImages]);
+
+  // Add an effect to handle fullscreen mode
+  useEffect(() => {
+    // Apply body style when capturing to prevent scrolling
+    if (isCapturing) {
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.width = '100%';
+      document.body.style.height = '100%';
+    } else {
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.width = '';
+      document.body.style.height = '';
+    }
+    
+    // Cleanup function
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.width = '';
+      document.body.style.height = '';
+    };
+  }, [isCapturing]);
 
   const updateCaptureStats = (): void => {
     // Count detected object classes
@@ -220,6 +232,49 @@ function App() {
     });
   };
 
+  // Apply a different layout completely when capturing
+  if (isCapturing) {
+    return (
+      <div className="fixed inset-0 flex flex-col bg-black z-50">
+        {/* Camera container - give it most of the screen */}
+        <div className="absolute inset-0">
+          <Camera 
+            onCapture={handleImageCapture} 
+            onUpdateFeedback={setFeedback}
+            onStopCapture={stopCapture}
+          />
+        </div>
+        
+        {/* Floating header */}
+        <div className="relative z-10 flex justify-between items-center bg-black bg-opacity-70 p-2">
+          <h1 className="text-white font-bold">Camera Capture</h1>
+          <button 
+            onClick={stopCapture}
+            className="px-3 py-1 bg-red-600 text-white text-sm rounded"
+          >
+            Exit
+          </button>
+        </div>
+        
+        {/* Floating footer */}
+        <div className="absolute bottom-0 left-0 right-0 z-10 bg-black bg-opacity-70 p-2">
+          <FeedbackMessage message={feedback.message} type={feedback.type} />
+          <div className="py-1">
+            <ProgressTracker 
+              coveredPercentage={coverageStatus.coveredPercentage}
+              capturedCount={coverageStatus.capturedCount}
+              requiredImages={coverageStatus.requiredImages}
+            />
+            <div className="text-center text-white text-sm mt-1">
+              Captured {coverageStatus.capturedCount} / {coverageStatus.requiredImages} images
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Normal layout when not capturing
   return (
     <div className="flex flex-col min-h-screen bg-gray-900 text-white">
       <header className="p-4 bg-gray-800 shadow-md">
@@ -229,22 +284,14 @@ function App() {
       <main className="flex-1 p-4">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="bg-gray-800 rounded-lg overflow-hidden shadow-lg">
-            {isCapturing ? (
-              <Camera 
-                onCapture={handleImageCapture} 
-                onUpdateFeedback={setFeedback}
-                onStopCapture={stopCapture}
-              />
-            ) : (
-              <div className="flex items-center justify-center h-64 sm:h-96 bg-gray-700">
-                <button 
-                  onClick={startCapture}
-                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Start Capture
-                </button>
-              </div>
-            )}
+            <div className="flex items-center justify-center h-64 sm:h-96 bg-gray-700">
+              <button 
+                onClick={startCapture}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Start Capture
+              </button>
+            </div>
             
             <FeedbackMessage message={feedback.message} type={feedback.type} />
             

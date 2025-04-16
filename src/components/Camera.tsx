@@ -37,11 +37,21 @@ const Camera: React.FC<CameraProps> = ({ onCapture, onUpdateFeedback, onStopCapt
   const [autoCaptureMode, setAutoCaptureMode] = useState<boolean>(false);
   const [blurTimeout, setBlurTimeout] = useState<number | null>(null);
   const [isImageBlurry, setIsImageBlurry] = useState<boolean>(false);
+  const [captureProgress, setCaptureProgress] = useState<number>(0);
+  const [showGuide, setShowGuide] = useState<boolean>(true);
+  const [capturePhase, setCapturePhase] = useState<'setup' | 'capturing' | 'completed'>('setup');
+  const [cubeDimensions, setCubeDimensions] = useState({ width: 60, height: 60, depth: 40 });
+  console.log(cubeDimensions);
+  
+  // Generate path points (angles at which to capture images)
+  const lowerPathPoints = Array.from({ length: 12 }, (_, i) => i * 30);
+  const upperPathPoints = Array.from({ length: 12 }, (_, i) => i * 30);
+  const [completedPoints, setCompletedPoints] = useState<number[]>([]);
+  const [currentPathLevel, setCurrentPathLevel] = useState<number>(0);
   
   // Target number of images to capture
-  const TARGET_IMAGES = 150;
+  const TARGET_IMAGES = 24; // 12 angles from lower path + 12 angles from upper path
   const ANGLE_PRECISION = 15; // Degrees between capture points
-  console.log(TARGET_IMAGES);
   
   const { objectDetected, objectPosition, isModelLoaded } = useObjectDetection(videoRef);
   const { captureImage, processForBlur } = useImageCapture(videoRef, canvasRef);
@@ -116,15 +126,17 @@ const Camera: React.FC<CameraProps> = ({ onCapture, onUpdateFeedback, onStopCapt
   useEffect(() => {
     if (isModelLoaded) {
       onUpdateFeedback({
-        message: "Object detection ready! Position your object within the cube",
+        message: capturePhase === 'setup' 
+          ? "Position your object within the cube and adjust the cube size if needed"
+          : "Object detection ready! Position your object within the cube",
         type: "success"
       });
     }
-  }, [isModelLoaded, onUpdateFeedback]);
+  }, [isModelLoaded, onUpdateFeedback, capturePhase]);
 
   // Handle object detection status changes
   useEffect(() => {
-    if (!isModelLoaded) return;
+    if (!isModelLoaded || capturePhase === 'setup') return;
     
     if (objectDetected && objectPosition) {
       const positionMessage = getPositionMessage(objectPosition);
@@ -142,7 +154,7 @@ const Camera: React.FC<CameraProps> = ({ onCapture, onUpdateFeedback, onStopCapt
           });
         } else {
           onUpdateFeedback({
-            message: `✅ Perfect – ${objectPosition.class} detected! Hold still...`,
+            message: `✅ Perfect – object detected! Hold still...`,
             type: "success"
           });
           
@@ -157,15 +169,7 @@ const Camera: React.FC<CameraProps> = ({ onCapture, onUpdateFeedback, onStopCapt
         type: "warning"
       });
     }
-  }, [objectDetected, objectPosition, isModelLoaded, autoCaptureMode, isImageBlurry]);
-
-//   const handleOrientation = (event: DeviceOrientationEvent): void => {
-//     setDeviceOrientation({
-//       alpha: event.alpha || 0, // Z-axis rotation
-//       beta: event.beta || 0,   // X-axis rotation
-//       gamma: event.gamma || 0  // Y-axis rotation
-//     });
-//   };
+  }, [objectDetected, objectPosition, isModelLoaded, autoCaptureMode, isImageBlurry, capturePhase]);
 
   const checkImageBlur = useCallback(() => {
     if (!videoRef.current) return;
@@ -213,6 +217,30 @@ const Camera: React.FC<CameraProps> = ({ onCapture, onUpdateFeedback, onStopCapt
     return `${normalizedAlpha}-${normalizedBeta}-${normalizedGamma}`;
   };
 
+  const isNearPathPoint = (): number | null => {
+    // Get the current path points based on the current level
+    const currentPoints = currentPathLevel === 0 ? lowerPathPoints : upperPathPoints;
+    
+    // Get the current orientation (alpha angle)
+    const alpha = ((deviceOrientation.alpha % 360) + 360) % 360;
+    
+    // Find if we're near any path point
+    for (const point of currentPoints) {
+      // Calculate shortest distance on the circle
+      const distance = Math.min(
+        Math.abs(alpha - point),
+        360 - Math.abs(alpha - point)
+      );
+      
+      // If we're close enough to a point and it's not already captured
+      if (distance <= ANGLE_PRECISION && !completedPoints.includes(point)) {
+        return point;
+      }
+    }
+    
+    return null;
+  };
+
   const isNewAngle = (): boolean => {
     const angleKey = getAngleKey();
     return !capturedAngles.has(angleKey);
@@ -227,18 +255,16 @@ const Camera: React.FC<CameraProps> = ({ onCapture, onUpdateFeedback, onStopCapt
   const tryAutoCapture = (): void => {
     if (!isReady || !objectDetected || isImageBlurry) return;
     
-    // Only capture if this is a new angle
-    if (isNewAngle()) {
-      performCapture();
-    } else {
-      onUpdateFeedback({
-        message: "⚠️ Similar angle already captured – try a different view",
-        type: "warning"
-      });
+    // Check if we're at a path point
+    const pathPoint = isNearPathPoint();
+    
+    // Only capture if this is a new angle and we're at a path point
+    if (pathPoint !== null && isNewAngle()) {
+      performCapture(pathPoint);
     }
   };
 
-  const performCapture = (): void => {
+  const performCapture = (pathPoint?: number): void => {
     // Capture the image
     const imageData = captureImage();
     
@@ -246,6 +272,33 @@ const Camera: React.FC<CameraProps> = ({ onCapture, onUpdateFeedback, onStopCapt
       // Record this angle as captured
       const angleKey = getAngleKey();
       setCapturedAngles(prev => new Set([...prev, angleKey]));
+      
+      // Add to completed path points if we're at a path point
+      if (pathPoint !== undefined) {
+        setCompletedPoints(prev => [...prev, pathPoint]);
+      }
+      
+      // Update progress
+      const newProgress = capturedAngles.size + 1;
+      setCaptureProgress(newProgress);
+      
+      // Check if we should switch path level
+      if (currentPathLevel === 0 && newProgress >= lowerPathPoints.length) {
+        setCurrentPathLevel(1);
+        onUpdateFeedback({
+          message: "Lower path completed! Now move to capture the upper angles.",
+          type: "success"
+        });
+      }
+      
+      // Check if we've completed all captures
+      if (newProgress >= TARGET_IMAGES) {
+        setCapturePhase('completed');
+        onUpdateFeedback({
+          message: "Capturing complete! Processing your 3D model...",
+          type: "success"
+        });
+      }
       
       // Pass to parent component
       onCapture({
@@ -261,9 +314,18 @@ const Camera: React.FC<CameraProps> = ({ onCapture, onUpdateFeedback, onStopCapt
     setAutoCaptureMode(prev => !prev);
     onUpdateFeedback({
       message: !autoCaptureMode 
-        ? "Auto-capture mode activated. Move around the object." 
+        ? "Auto-capture mode activated. Move around the object following the path." 
         : "Auto-capture mode deactivated.",
       type: "info"
+    });
+  };
+
+  const handleStartCapturing = (): void => {
+    setCapturePhase('capturing');
+    setAutoCaptureMode(true);
+    onUpdateFeedback({
+      message: "Auto-capture started. Move around the object following the lower path.",
+      type: "success"
     });
   };
 
@@ -272,6 +334,10 @@ const Camera: React.FC<CameraProps> = ({ onCapture, onUpdateFeedback, onStopCapt
       stream.getTracks().forEach(track => track.stop());
     }
     onStopCapture();
+  };
+
+  const handleCubeDimensionsChange = (dimensions: any) => {
+    setCubeDimensions(dimensions);
   };
 
   return (
@@ -284,10 +350,33 @@ const Camera: React.FC<CameraProps> = ({ onCapture, onUpdateFeedback, onStopCapt
         className="w-full h-64 sm:h-96 bg-black object-cover"
       />
       <canvas ref={canvasRef} className="hidden" />
-      <CubeOverlay objectDetected={objectDetected} />
+      
+      <CubeOverlay 
+        
+        onCubeChange={handleCubeDimensionsChange}
+        showGuide={showGuide}
+        pathHeight={currentPathLevel === 0 ? 40 : 30}
+        pathPoints={currentPathLevel === 0 ? lowerPathPoints : upperPathPoints}
+        completedPoints={completedPoints}
+        currentAngle={deviceOrientation.alpha}
+        pathLevel={currentPathLevel}
+      />
+      
+      {/* Progress indicator */}
+      <div className="absolute top-4 left-4 bg-black bg-opacity-50 p-2 rounded-lg">
+        <div className="text-white text-sm">
+          Progress: {captureProgress}/{TARGET_IMAGES}
+        </div>
+        <div className="w-32 h-2 bg-gray-700 rounded-full mt-1">
+          <div 
+            className="h-2 bg-green-500 rounded-full" 
+            style={{ width: `${(captureProgress / TARGET_IMAGES) * 100}%` }}
+          ></div>
+        </div>
+      </div>
       
       {/* Detection overlay */}
-      {objectDetected && objectPosition && (
+      {/* {objectDetected && objectPosition && (
         <div 
           className="absolute border-2 border-green-500 rounded-md bg-green-500 bg-opacity-20"
           style={{
@@ -297,31 +386,52 @@ const Camera: React.FC<CameraProps> = ({ onCapture, onUpdateFeedback, onStopCapt
             height: `${(objectPosition.height / (videoRef.current?.videoHeight || 1)) * 100}%`
           }}
         >
-          <div className="absolute top-0 left-0 bg-green-500 text-xs text-white px-1 rounded-br-md">
-            {objectPosition.class} ({Math.round(objectPosition.score * 100)}%)
-          </div>
+           <div className="absolute top-0 left-0 bg-green-500 text-xs text-white px-1 rounded-br-md">
+            Object ({Math.round(objectPosition.score * 100)}%)
+          </div> 
         </div>
-      )}
+      )} */}
       
+      {/* Action buttons */}
       <div className="absolute bottom-4 right-4 flex space-x-2">
-        <button 
-          onClick={handleManualCapture}
-          disabled={!isReady || !objectDetected || isImageBlurry}
-          className={`px-4 py-2 ${isReady && objectDetected && !isImageBlurry ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-600 cursor-not-allowed'} text-white rounded-lg transition-colors`}
-        >
-          Capture
-        </button>
-        <button 
-          onClick={toggleAutoCaptureMode}
-          className={`px-4 py-2 ${autoCaptureMode ? 'bg-blue-600' : 'bg-gray-600'} text-white rounded-lg hover:bg-blue-700 transition-colors`}
-        >
-          {autoCaptureMode ? 'Auto: ON' : 'Auto: OFF'}
-        </button>
+        {capturePhase === 'setup' ? (
+          <>
+            <button 
+              onClick={() => setShowGuide(!showGuide)}
+              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              {showGuide ? 'Hide Guide' : 'Show Guide'}
+            </button>
+            <button 
+              onClick={handleStartCapturing}
+              disabled={!isReady || !objectDetected}
+              className={`px-4 py-2 ${isReady && objectDetected ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-600 cursor-not-allowed'} text-white rounded-lg transition-colors`}
+            >
+              Start Capturing
+            </button>
+          </>
+        ) : (
+          <>
+            <button 
+              onClick={handleManualCapture}
+              disabled={!isReady || !objectDetected || isImageBlurry}
+              className={`px-4 py-2 ${isReady && objectDetected && !isImageBlurry ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-600 cursor-not-allowed'} text-white rounded-lg transition-colors`}
+            >
+              Capture
+            </button>
+            <button 
+              onClick={toggleAutoCaptureMode}
+              className={`px-4 py-2 ${autoCaptureMode ? 'bg-blue-600' : 'bg-gray-600'} text-white rounded-lg hover:bg-blue-700 transition-colors`}
+            >
+              {autoCaptureMode ? 'Auto: ON' : 'Auto: OFF'}
+            </button>
+          </>
+        )}
         <button 
           onClick={handleStopCapture}
           className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
         >
-          Stop
+          {capturePhase === 'completed' ? 'Finish' : 'Stop'}
         </button>
       </div>
       
