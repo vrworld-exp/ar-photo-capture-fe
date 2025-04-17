@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import Camera from './components/Camera';
-import ProgressTracker from './components/ProgressTracker';
-import FeedbackMessage from './components/FeedbackMessage';
+// import ProgressTracker from './components/ProgressTracker';
+// import FeedbackMessage from './components/FeedbackMessage';
 import ImageGallery from './components/ImageGallery';
-import CaptureStats from './components/CaptureStats';
+// import CaptureStats from './components/CaptureStats';
 import { ImageData, Feedback, CoverageStatus, CaptureStats as CaptureStatsType } from './types';
 
 function App() {
@@ -18,7 +18,7 @@ function App() {
     message: "Press Start to begin capturing",
     type: "info" 
   });
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  // const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [captureStats, setCaptureStats] = useState<CaptureStatsType>({
     angles: {
       top: 0,
@@ -31,7 +31,8 @@ function App() {
     },
     detectedClasses: {}
   });
-
+  console.log(feedback, captureStats);
+  
   // Update coverage whenever new images are added
   useEffect(() => {
     const newCount = capturedImages.length;
@@ -148,89 +149,89 @@ function App() {
     }
   };
 
-  const downloadImages = async (): Promise<void> => {
-    setIsProcessing(true);
-    setFeedback({
-      message: "Preparing images for download...",
-      type: "info"
-    });
+  // const downloadImages = async (): Promise<void> => {
+  //   setIsProcessing(true);
+  //   setFeedback({
+  //     message: "Preparing images for download...",
+  //     type: "info"
+  //   });
     
-    try {
-      // Create a zip file of all images and download
-      const JSZip = (await import('jszip')).default;
-      const zip = new JSZip();
-      const imgFolder = zip.folder("object_images");
+  //   try {
+  //     // Create a zip file of all images and download
+  //     const JSZip = (await import('jszip')).default;
+  //     const zip = new JSZip();
+  //     const imgFolder = zip.folder("object_images");
       
-      if (!imgFolder) {
-        throw new Error("Could not create zip folder");
-      }
+  //     if (!imgFolder) {
+  //       throw new Error("Could not create zip folder");
+  //     }
       
-      // Add a metadata JSON file with capture information
-      const metadata = {
-        captureDate: new Date().toISOString(),
-        imageCount: capturedImages.length,
-        objectClasses: captureStats.detectedClasses,
-        coverageStats: captureStats.angles
-      };
+  //     // Add a metadata JSON file with capture information
+  //     const metadata = {
+  //       captureDate: new Date().toISOString(),
+  //       imageCount: capturedImages.length,
+  //       objectClasses: captureStats.detectedClasses,
+  //       coverageStats: captureStats.angles
+  //     };
       
-      zip.file("metadata.json", JSON.stringify(metadata, null, 2));
+  //     zip.file("metadata.json", JSON.stringify(metadata, null, 2));
       
-      // Add each image to the zip
-      capturedImages.forEach((image, index) => {
-        // Remove the data URL prefix
-        const base64Data = image.dataUrl.split(',')[1];
-        const fileName = `object_${image.objectClass || 'item'}_${index + 1}.jpg`;
-        imgFolder.file(fileName, base64Data, {base64: true});
-      });
+  //     // Add each image to the zip
+  //     capturedImages.forEach((image, index) => {
+  //       // Remove the data URL prefix
+  //       const base64Data = image.dataUrl.split(',')[1];
+  //       const fileName = `object_${image.objectClass || 'item'}_${index + 1}.jpg`;
+  //       imgFolder.file(fileName, base64Data, {base64: true});
+  //     });
       
-      // Generate and download the zip
-      const content = await zip.generateAsync({type: 'blob'});
-      const url = window.URL.createObjectURL(content);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'object_capture_images.zip';
-      link.click();
-      window.URL.revokeObjectURL(url);
+  //     // Generate and download the zip
+  //     const content = await zip.generateAsync({type: 'blob'});
+  //     const url = window.URL.createObjectURL(content);
+  //     const link = document.createElement('a');
+  //     link.href = url;
+  //     link.download = 'object_capture_images.zip';
+  //     link.click();
+  //     window.URL.revokeObjectURL(url);
       
-      setFeedback({
-        message: "Images downloaded successfully!",
-        type: "success"
-      });
-    } catch (error) {
-      console.error("Error creating zip file:", error);
-      setFeedback({
-        message: "Error creating download. Please try again.",
-        type: "error"
-      });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
+  //     setFeedback({
+  //       message: "Images downloaded successfully!",
+  //       type: "success"
+  //     });
+  //   } catch (error) {
+  //     console.error("Error creating zip file:", error);
+  //     setFeedback({
+  //       message: "Error creating download. Please try again.",
+  //       type: "error"
+  //     });
+  //   } finally {
+  //     setIsProcessing(false);
+  //   }
+  // };
 
-  const resetCapture = (): void => {
-    setCapturedImages([]);
-    setCoverageStatus({
-      coveredPercentage: 0,
-      requiredImages: 150,
-      capturedCount: 0
-    });
-    setCaptureStats({
-      angles: {
-        top: 0,
-        side: 0,
-        bottom: 0,
-        front: 0,
-        back: 0,
-        right: 0,
-        left: 0
-      },
-      detectedClasses: {}
-    });
-    setFeedback({
-      message: "Reset complete. Press Start to begin capturing",
-      type: "info"
-    });
-  };
+  // const resetCapture = (): void => {
+  //   setCapturedImages([]);
+  //   setCoverageStatus({
+  //     coveredPercentage: 0,
+  //     requiredImages: 150,
+  //     capturedCount: 0
+  //   });
+  //   setCaptureStats({
+  //     angles: {
+  //       top: 0,
+  //       side: 0,
+  //       bottom: 0,
+  //       front: 0,
+  //       back: 0,
+  //       right: 0,
+  //       left: 0
+  //     },
+  //     detectedClasses: {}
+  //   });
+  //   setFeedback({
+  //     message: "Reset complete. Press Start to begin capturing",
+  //     type: "info"
+  //   });
+  // };
 
   // Apply a different layout completely when capturing
   if (isCapturing) {
@@ -246,7 +247,7 @@ function App() {
         </div>
         
         {/* Floating header */}
-        <div className="relative z-10 flex justify-between items-center bg-black bg-opacity-70 p-2">
+        {/* <div className="relative z-10 flex justify-between items-center bg-black bg-opacity-70 p-2">
           <h1 className="text-white font-bold">Camera Capture</h1>
           <button 
             onClick={stopCapture}
@@ -254,10 +255,10 @@ function App() {
           >
             Exit
           </button>
-        </div>
+        </div> */}
         
         {/* Floating footer */}
-        <div className="absolute bottom-0 left-0 right-0 z-10 bg-black bg-opacity-70 p-2">
+        {/* <div className="absolute bottom-0 left-0 right-0 z-10 bg-black bg-opacity-70 p-2">
           <FeedbackMessage message={feedback.message} type={feedback.type} />
           <div className="py-1">
             <ProgressTracker 
@@ -269,7 +270,7 @@ function App() {
               Captured {coverageStatus.capturedCount} / {coverageStatus.requiredImages} images
             </div>
           </div>
-        </div>
+        </div> */}
       </div>
     );
   }
@@ -293,17 +294,17 @@ function App() {
               </button>
             </div>
             
-            <FeedbackMessage message={feedback.message} type={feedback.type} />
+            {/* <FeedbackMessage message={feedback.message} type={feedback.type} />
             
             <ProgressTracker 
               coveredPercentage={coverageStatus.coveredPercentage}
               capturedCount={coverageStatus.capturedCount}
               requiredImages={coverageStatus.requiredImages}
-            />
+            /> */}
           </div>
           
           <div className="bg-gray-800 rounded-lg p-4 shadow-lg">
-            <div className="flex justify-between items-center mb-4">
+            {/* <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold">Captured Images</h2>
               <div className="space-x-2">
                 {capturedImages.length > 0 && (
@@ -325,12 +326,12 @@ function App() {
                   </>
                 )}
               </div>
-            </div>
+            </div> */}
             
-            {capturedImages.length > 0 && (
+            {/* {capturedImages.length > 0 && (
               <CaptureStats stats={captureStats} />
             )}
-            
+             */}
             <div className="mt-4">
               <ImageGallery images={capturedImages} />
             </div>
